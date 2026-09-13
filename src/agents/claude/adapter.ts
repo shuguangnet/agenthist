@@ -12,6 +12,7 @@ import type {
 import { failedSourceInspection } from "../source-support.js";
 import { requirePortableSession } from "../portable-support.js";
 import { discoverClaudeCarriers } from "./carrier.js";
+import { claudeFamilyProfile, type ClaudeFamilyAgent } from "./family.js";
 import {
   closeClaudeSelection,
   prepareClaudeArchive,
@@ -44,31 +45,36 @@ function sourceOptions(options: AgentSourceOptions): ClaudeSourceOptions {
   };
 }
 
-async function detectClaude(options: AgentSourceOptions): Promise<HistorySourceInspection> {
-  let source;
-  try {
-    source = resolveClaudeSource(sourceOptions(options));
-  } catch (error) {
-    return failedSourceInspection("claude", [], "error", error);
-  }
-  const locations = [{ role: "config_root" as const, path: source.configRoot }];
-  try {
-    const carriers = await discoverClaudeCarriers(source.configRoot);
-    if (!carriers.some((carrier) => carrier.role === "main")) {
-      return { agent: "claude", status: "not_detected", locations, findings: [] };
+function detectFamily(agent: ClaudeFamilyAgent) {
+  return async (options: AgentSourceOptions): Promise<HistorySourceInspection> => {
+    const profile = claudeFamilyProfile(agent);
+    let source;
+    try {
+      source = resolveClaudeSource(sourceOptions(options), agent);
+    } catch (error) {
+      return failedSourceInspection(agent, [], "error", error);
     }
-    await requireClaudeSource(source);
-    return { agent: "claude", status: "ready", locations, findings: [] };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { agent: "claude", status: "not_detected", locations, findings: [] };
+    const locations = [{ role: "config_root" as const, path: source.configRoot }];
+    try {
+      const carriers = await discoverClaudeCarriers(source.configRoot, agent);
+      if (!carriers.some((carrier) => carrier.role === "main")) {
+        return { agent, status: "not_detected", locations, findings: [] };
+      }
+      await requireClaudeSource(source, agent);
+      return { agent, status: "ready", locations, findings: [] };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return { agent, status: "not_detected", locations, findings: [] };
+      }
+      return failedSourceInspection(agent, locations, "blocked", error);
     }
-    return failedSourceInspection("claude", locations, "blocked", error);
-  }
+  };
 }
 
-function claudeProjection(value: AgentPortableProjection): ClaudePortableProjection {
-  if (value.targetAgent !== "claude") throw new Error("Claude portable target received another Agent projection");
+function claudeProjection(value: AgentPortableProjection, agent: ClaudeFamilyAgent): ClaudePortableProjection {
+  if (value.targetAgent !== agent) {
+    throw new Error(`${claudeFamilyProfile(agent).displayName} portable target received another Agent projection`);
+  }
   return value as ClaudePortableProjection;
 }
 
@@ -83,19 +89,26 @@ function nativeImportResult(result: RestoreClaudeResult) {
   };
 }
 
-export const claudeAdapter = {
-  id: "claude",
-  resume: { launch: launchClaudeSession },
+export function createClaudeFamilyAdapter<const A extends ClaudeFamilyAgent>(agent: A): AgentAdapter<A> {
+  const profile = claudeFamilyProfile(agent);
+  const detect = detectFamily(agent);
+  return {
+  id: agent as A,
+  resume: { launch: (request) => launchClaudeSession(request, agent) },
   source: {
-    detect: detectClaude,
-    inspect: detectClaude,
+    detect,
+    inspect: detect,
     async roots(options) {
-      const source = resolveClaudeSource(sourceOptions(options));
-      await requireClaudeSource(source);
+      const source = resolveClaudeSource(sourceOptions(options), agent);
+      await requireClaudeSource(source, agent);
       return [source.configRoot];
     },
     async scan(options) {
-      return (await scanClaude({ stateDirectory: options.stateDirectory, ...sourceOptions(options) })).snapshot;
+      return (await scanClaude({
+        stateDirectory: options.stateDirectory,
+        ...sourceOptions(options),
+        familyAgent: agent,
+      })).snapshot;
     },
   },
   archive: {
@@ -125,6 +138,7 @@ export const claudeAdapter = {
   nativeImport: {
     async prepare(options) {
       const prepared = await prepareClaudeRestore({
+        familyAgent: agent,
         stateDirectory: options.stateDirectory,
         entries: options.entries,
         objects: options.objects,
@@ -142,7 +156,7 @@ export const claudeAdapter = {
   },
   transaction: {
     owns(journal) {
-      return journal.agents.length === 1 && journal.agents[0] === "claude" &&
+      return journal.agents.length === 1 && journal.agents[0] === agent &&
         journal.operation === "history_import";
     },
     previewRollback: previewClaudeRollback,
@@ -166,14 +180,15 @@ export const claudeAdapter = {
   },
   portableTarget: {
     writeMode: "independent",
-    project: projectPortableContextToClaude,
+    project: (session, conversionKey) => projectPortableContextToClaude(session, conversionKey, agent),
     async write(options) {
       const sources: ArchiveObjectSource[] = [];
       const entries: ProjectedArchiveEntry[] = [];
       for (const item of options.projections) {
-        const projection = claudeProjection(item.projection);
+        const projection = claudeProjection(item.projection, agent);
         const objectId = options.allocateObjectId();
         const written = await writeClaudePortableProjection(
+          agent,
           projection,
           objectId,
           path.join(options.workspace, `${objectId}.jsonl`),
@@ -185,4 +200,7 @@ export const claudeAdapter = {
       return { sources, entries };
     },
   },
-} satisfies AgentAdapter<"claude">;
+  } satisfies AgentAdapter<ClaudeFamilyAgent>;
+}
+
+export const claudeAdapter = createClaudeFamilyAdapter("claude");

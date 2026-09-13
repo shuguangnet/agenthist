@@ -1,6 +1,7 @@
 import { lstat, readdir } from "node:fs/promises";
 import path from "node:path";
 
+import { claudeFamilyProfile, type ClaudeFamilyAgent } from "./family.js";
 import { claudeCheckpointPathName } from "./sidecars/checkpoint.js";
 import { canonicalClaudeUuid } from "./identity.js";
 import { claudeTaskPathIdentity } from "./sidecars/task.js";
@@ -51,7 +52,9 @@ function uuid(value: string): string | undefined {
 
 function classify(
   relativePath: string,
+  agent: ClaudeFamilyAgent = "claude",
 ): Omit<ClaudeCarrier, "sourcePath" | "mode" | "fingerprint" | "modifiedAt"> | undefined {
+  const profile = claudeFamilyProfile(agent);
   const parts = relativePath.split("/");
   if (parts.length === 1 && parts[0] === "history.jsonl") {
     return { relativePath, role: "auxiliary" };
@@ -59,6 +62,15 @@ function classify(
   if (parts[0] === "projects" && parts.length >= 3) {
     const projectCarrier = parts[1];
     if (projectCarrier === undefined || projectCarrier === "" || parts[2] === "memory") return undefined;
+    if (profile.mainTranscriptDirectory !== undefined && parts.length === 4 && parts[2] === profile.mainTranscriptDirectory) {
+      if (parts[3]!.endsWith(".jsonl")) {
+        const sessionCandidate = uuid(parts[3]!.slice(0, -".jsonl".length));
+        if (sessionCandidate !== undefined) {
+          return { relativePath, role: "main", projectCarrier, sessionCandidate };
+        }
+      }
+      return { relativePath, role: "auxiliary", projectCarrier };
+    }
     if (parts.length === 3 && parts[2]!.endsWith(".jsonl")) {
       const sessionCandidate = uuid(parts[2]!.slice(0, -".jsonl".length));
       if (sessionCandidate !== undefined) {
@@ -111,7 +123,10 @@ function skipDirectory(relativePath: string): boolean {
   return parts[0] === "projects" && parts.length === 3 && parts[2] === "memory";
 }
 
-export async function discoverClaudeCarriers(configRoot: string): Promise<ClaudeCarrier[]> {
+export async function discoverClaudeCarriers(
+  configRoot: string,
+  agent: ClaudeFamilyAgent = "claude",
+): Promise<ClaudeCarrier[]> {
   const result: ClaudeCarrier[] = [];
   const rootEntries = await readdir(configRoot, { withFileTypes: true });
   rootEntries.sort((left, right) => left.name.localeCompare(right.name));
@@ -151,7 +166,7 @@ export async function discoverClaudeCarriers(configRoot: string): Promise<Claude
     }
     if (!info.isFile()) throw new Error(`Claude Code history contains an unsupported entry: ${current.absolute}`);
     const relativePath = portable(current.relative);
-    const classified = classify(relativePath);
+    const classified = classify(relativePath, agent);
     // Claude may hard-link a task spool into tool-results, and may hard-link
     // checkpoint backups when copying file history to a fork. Stable copy plus
     // the before/after inventory still prove the captured bytes.

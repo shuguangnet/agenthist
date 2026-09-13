@@ -23,6 +23,7 @@ export interface TransferHistorySessionOptions {
   readonly opencodeDataRoot?: string;
   readonly opencodeDatabase?: string;
   readonly claudeConfigRoot?: string;
+  readonly qoderConfigRoot?: string;
   readonly piSessionRoot?: string;
   readonly providerPolicy?: string;
   readonly pathMappings?: readonly string[];

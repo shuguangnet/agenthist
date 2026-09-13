@@ -55,6 +55,7 @@ export interface HistorySourceOptions {
   readonly codex?: CodexHistorySourceOptions;
   readonly opencode?: OpenCodeHistorySourceOptions;
   readonly claude?: ClaudeHistorySourceOptions;
+  readonly qoder?: ClaudeHistorySourceOptions;
   readonly pi?: PiHistorySourceOptions;
 }
 
@@ -95,6 +96,7 @@ function sourceOptions(options: HistorySourceOptions, agent: Agent): AgentSource
   const codex = options.codex ?? {};
   const opencode = options.opencode ?? {};
   const claude = options.claude ?? {};
+  const qoder = options.qoder ?? {};
   const pi = options.pi ?? {};
   const byAgent: Readonly<Record<Agent, AgentSourceOptions>> = {
     codex: {
@@ -117,6 +119,12 @@ function sourceOptions(options: HistorySourceOptions, agent: Agent): AgentSource
       ...(claude.cwd === undefined ? {} : { cwd: claude.cwd }),
       ...(claude.home === undefined ? {} : { home: claude.home }),
       ...(claude.environment === undefined ? {} : { environment: claude.environment }),
+    },
+    qoder: {
+      ...(qoder.configRoot === undefined ? {} : { historyRoot: qoder.configRoot }),
+      ...(qoder.cwd === undefined ? {} : { cwd: qoder.cwd }),
+      ...(qoder.home === undefined ? {} : { home: qoder.home }),
+      ...(qoder.environment === undefined ? {} : { environment: qoder.environment }),
     },
     pi: {
       ...(pi.sessionRoot === undefined ? {} : { historyRoot: pi.sessionRoot }),

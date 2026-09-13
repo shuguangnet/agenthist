@@ -32,6 +32,7 @@ AgentHist 集中整理受支持的编程 Agent 会话，提供查看、搜索、
 | [Claude Code](https://github.com/anthropics/claude-code) | ✓ | ✓ | ✓ |
 | [OpenCode](https://github.com/anomalyco/opencode) | ✓ | ✓ | ✓ |
 | [Pi](https://github.com/earendil-works/pi) | ✓ | ✓ | ✓ |
+| [Qoder](https://qoder.com) | ✓ | ✓ | ✓ |
 
 ## 📦 安装
 

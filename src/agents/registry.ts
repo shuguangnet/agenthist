@@ -4,12 +4,14 @@ import { codexAdapter } from "./codex/adapter.js";
 import type { AgentAdapter } from "./contracts.js";
 import { openCodeAdapter } from "./opencode/adapter.js";
 import { piAdapter } from "./pi/adapter.js";
+import { qoderAdapter } from "./qoder/adapter.js";
 
 export const AGENT_REGISTRY = {
   codex: codexAdapter,
   claude: claudeAdapter,
   opencode: openCodeAdapter,
   pi: piAdapter,
+  qoder: qoderAdapter,
 } as const satisfies { readonly [A in Agent]: AgentAdapter<A> };
 
 export function agentAdapter(agent: Agent): AgentAdapter {

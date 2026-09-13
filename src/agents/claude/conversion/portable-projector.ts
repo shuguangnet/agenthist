@@ -12,11 +12,12 @@ import {
 } from "../../../domain/portable-context.js";
 import type { PreparedArchiveEntries } from "../../../infrastructure/archive.js";
 import { claudeSessionRef } from "../identity.js";
+import { claudeFamilyProfile, type ClaudeFamilyAgent } from "../family.js";
 import { claudeProjectCarrier } from "../project.js";
 import { parseClaudeTranscript } from "../history/transcript.js";
 
 export interface ClaudePortableProjection {
-  readonly targetAgent: "claude";
+  readonly targetAgent: ClaudeFamilyAgent;
   readonly nativeId: string;
   readonly firstRootRecordUuid: string;
   readonly sessionRef: string;
@@ -29,10 +30,12 @@ export interface ClaudePortableProjection {
 export function projectPortableContextToClaude(
   session: PortableContextSession,
   conversionKey: string,
+  agent: ClaudeFamilyAgent = "claude",
 ): ClaudePortableProjection {
   if (session.messages.length === 0) throw new Error("portable context session has no messages");
-  const nativeId = derivedConversionNativeId(conversionKey, "claude");
-  const firstRootRecordUuid = derivedConversionUuid(conversionKey, "claude.root");
+  const profile = claudeFamilyProfile(agent);
+  const nativeId = derivedConversionNativeId(conversionKey, agent);
+  const firstRootRecordUuid = derivedConversionUuid(conversionKey, `${agent}.root`);
   const projectCarrier = claudeProjectCarrier(session.workingDirectory);
   const records: Record<string, unknown>[] = [];
   let parent: string | null = null;
@@ -58,7 +61,7 @@ export function projectPortableContextToClaude(
       lastUser = text;
       records.push({
         ...common,
-        promptId: derivedConversionUuid(conversionKey, `claude.prompt.${message.ordinal}`),
+        promptId: derivedConversionUuid(conversionKey, `${agent}.prompt.${message.ordinal}`),
         permissionMode: "default",
         message: { role: "user", content: text },
       });
@@ -66,7 +69,7 @@ export function projectPortableContextToClaude(
       records.push({
         ...common,
         message: {
-          id: `msg_agenthist_${derivedConversionUuid(conversionKey, `claude.message.${message.ordinal}`).replaceAll("-", "").slice(0, 24)}`,
+          id: `msg_agenthist_${derivedConversionUuid(conversionKey, `${agent}.message.${message.ordinal}`).replaceAll("-", "").slice(0, 24)}`,
           type: "message",
           role: "assistant",
           model: message.model || session.defaultModel || "agenthist-converted",
@@ -78,16 +81,21 @@ export function projectPortableContextToClaude(
     }
     parent = uuid;
   }
-  if (lastUser === "" || parent === null) throw new Error("portable context session cannot produce Claude history");
+  if (lastUser === "" || parent === null) {
+    throw new Error(`portable context session cannot produce ${profile.displayName} history`);
+  }
   records.push({ type: "last-prompt", lastPrompt: lastUser, leafUuid: parent, sessionId: nativeId });
   const transcript = Buffer.from(`${records.map((record) => JSON.stringify(record)).join("\n")}\n`, "utf8");
+  const mainDirectory = profile.mainTranscriptDirectory === undefined
+    ? ""
+    : `/${profile.mainTranscriptDirectory}`;
   return {
-    targetAgent: "claude",
+    targetAgent: agent,
     nativeId,
     firstRootRecordUuid,
-    sessionRef: claudeSessionRef(nativeId, firstRootRecordUuid),
+    sessionRef: claudeSessionRef(nativeId, firstRootRecordUuid, agent),
     projectCarrier,
-    relativePath: `claude/projects/${projectCarrier}/${nativeId}.jsonl`,
+    relativePath: `claude/projects/${projectCarrier}${mainDirectory}/${nativeId}.jsonl`,
     transcript,
     findings: normalizeConversionFindings([
       { code: "claude.session_identity.synthesized", disposition: "synthesized", count: 1 },
@@ -99,6 +107,7 @@ export function projectPortableContextToClaude(
 }
 
 export async function writeClaudePortableProjection(
+  agent: ClaudeFamilyAgent,
   projection: ClaudePortableProjection,
   objectId: string,
   outputPath: string,
@@ -107,13 +116,13 @@ export async function writeClaudePortableProjection(
   await writeFile(outputPath, projection.transcript, { flag: "wx", mode: 0o600 });
   const parsed = await parseClaudeTranscript(outputPath, projection.nativeId, sourceUpdatedAt);
   if (parsed.firstRootRecordUuid !== projection.firstRootRecordUuid) {
-    throw new Error("Claude conversion projection changed its derived identity");
+    throw new Error(`${claudeFamilyProfile(agent).displayName} conversion projection changed its derived identity`);
   }
   return {
-    sources: [{ id: objectId, kind: "claude.main-transcript", filePath: outputPath }],
+    sources: [{ id: objectId, kind: `${agent}.main-transcript`, filePath: outputPath }],
     entries: [{
       kind: "history",
-      agent: "claude",
+      agent,
       sessionRef: projection.sessionRef,
       nativeId: projection.nativeId,
       title: parsed.title,

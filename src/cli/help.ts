@@ -19,13 +19,13 @@ const commands = [
 
 const commandHelpText: Readonly<Record<string, string>> = {
   doctor: `Usage:
-  agenthist doctor [--agent <codex|claude|opencode|pi>]...
+  agenthist doctor [--agent <codex|claude|opencode|pi|qoder>]...
 
 Inspect detected history sources without creating AgentHist state or reading chat bodies.
 The default is every supported Agent.
 `,
   scan: `Usage:
-  agenthist scan [--agent <codex|claude|opencode|pi>]...
+  agenthist scan [--agent <codex|claude|opencode|pi|qoder>]...
 
 Copy detected native history into the local AgentHist history pool.
 The default is every detected Agent; --agent is an optional filter.
@@ -50,7 +50,7 @@ remaining count, and next offset when another page exists.
 `,
   resume: `Usage:
   agenthist resume
-  agenthist resume --last [--agent <codex|claude|opencode|pi>]
+  agenthist resume --last [--agent <codex|claude|opencode|pi|qoder>]
   agenthist resume --session <session-ref> [--agent <agent>]
 
 Refresh local history, choose one conversation, and continue it with any supported Agent.
@@ -81,7 +81,7 @@ run through a compatible Chat Completions endpoint or a supported local Agent CL
 Model check sends no history.
 `,
   skill: `Usage:
-  agenthist skill install [--agent <codex|claude|opencode|pi>]... [--force]
+  agenthist skill install [--agent <codex|claude|opencode|pi|qoder>]... [--force]
   agenthist skill uninstall
 
 Install the AgentHist usage Skill. The default is every supported Agent;

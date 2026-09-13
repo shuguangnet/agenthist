@@ -24,6 +24,11 @@ test("default skill locations cover supported Agents without duplicating OpenCod
       shared: true,
     },
     {
+      agents: ["qoder"],
+      directory: "/home/alice/.qoder/skills/agenthist",
+      shared: false,
+    },
+    {
       agents: ["pi"],
       directory: "/home/alice/.pi/agent/skills/agenthist",
       shared: false,
@@ -49,6 +54,11 @@ test("skill removal covers shared and Agent-native locations", () => {
       shared: true,
     },
     {
+      agents: ["qoder"],
+      directory: "/home/alice/.qoder/skills/agenthist",
+      shared: false,
+    },
+    {
       agents: ["pi"],
       directory: "/home/alice/.pi/agent/skills/agenthist",
       shared: false,
@@ -71,6 +81,7 @@ test("custom roots and disabled compatibility use each Agent's native location",
       CLAUDE_CONFIG_DIR: "/Volumes/config/claude",
       XDG_CONFIG_HOME: "/Volumes/config/xdg",
       PI_CODING_AGENT_DIR: "/Volumes/config/pi",
+      QODER_CONFIG_DIR: "/Volumes/config/qoder",
     },
   }), [
     {
@@ -86,6 +97,11 @@ test("custom roots and disabled compatibility use each Agent's native location",
     {
       agents: ["opencode"],
       directory: "/Volumes/config/xdg/opencode/skills/agenthist",
+      shared: false,
+    },
+    {
+      agents: ["qoder"],
+      directory: "/Volumes/config/qoder/skills/agenthist",
       shared: false,
     },
     {
@@ -116,6 +132,11 @@ test("Windows skill locations use Windows paths", () => {
     {
       agents: ["opencode"],
       directory: String.raw`C:\Users\Alice\.config\opencode\skills\agenthist`,
+      shared: false,
+    },
+    {
+      agents: ["qoder"],
+      directory: String.raw`C:\Users\Alice\.qoder\skills\agenthist`,
       shared: false,
     },
     {

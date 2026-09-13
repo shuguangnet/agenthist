@@ -45,6 +45,7 @@ export interface ImportHistoryOptions {
   readonly opencodeDataRoot?: string;
   readonly opencodeDatabase?: string;
   readonly claudeConfigRoot?: string;
+  readonly qoderConfigRoot?: string;
   readonly piSessionRoot?: string;
   readonly providerPolicy?: string;
   readonly pathMappings?: readonly string[];
@@ -194,6 +195,10 @@ function restoreSourceOptions(options: PreparedHistoryImportOptions, agent: Agen
     claude: {
       ...common,
       ...(options.claudeConfigRoot === undefined ? {} : { historyRoot: options.claudeConfigRoot }),
+    },
+    qoder: {
+      ...common,
+      ...(options.qoderConfigRoot === undefined ? {} : { historyRoot: options.qoderConfigRoot }),
     },
     pi: {
       ...common,

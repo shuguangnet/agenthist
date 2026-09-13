@@ -85,6 +85,20 @@ export function resolveSkillInstallLocations(
     });
   }
 
+  if (requested.has("qoder")) {
+    const qoderRoot = environmentPath(
+      context.environment.QODER_CONFIG_DIR,
+      implementation.join(context.home, ".qoder"),
+      context.cwd,
+      implementation,
+    );
+    locations.push({
+      agents: ["qoder"],
+      directory: implementation.join(qoderRoot, "skills", "agenthist"),
+      shared: false,
+    });
+  }
+
   if (requested.has("pi")) {
     const piRoot = environmentPath(
       context.environment.PI_CODING_AGENT_DIR,
