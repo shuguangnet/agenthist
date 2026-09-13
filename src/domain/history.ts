@@ -131,3 +131,24 @@ export interface AgentSnapshot {
   readonly warnings: readonly string[];
   readonly scan?: SnapshotScanState;
 }
+
+/**
+ * Manifest schema (v3): identical to the v2 snapshot except that each session's
+ * `searchText` is omitted from the manifest file and stored in a per-snapshot
+ * `search.json` sidecar plus the derived SQLite FTS index. Consumers of loaded
+ * history receive sessions with an empty `searchText` array and must use the
+ * search index for body-text search.
+ */
+export const MANIFEST_SCHEMA_VERSION = "agenthist.history-snapshot/v3";
+export type StoredManifestSession = Omit<StoredSession, "searchText">;
+
+export interface AgentManifest {
+  readonly schemaVersion: typeof MANIFEST_SCHEMA_VERSION;
+  readonly snapshotId: string;
+  readonly agent: Agent;
+  readonly scannedAt: string;
+  readonly sessions: readonly StoredManifestSession[];
+  readonly auxiliaryFiles: readonly string[];
+  readonly warnings: readonly string[];
+  readonly scan?: SnapshotScanState;
+}
