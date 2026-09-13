@@ -443,7 +443,7 @@ test("Pi bulk export skips an external-parent session but still fails on a missi
     const head = JSON.parse(await readFile(path.join(state, "history", "pi", "head.json"), "utf8")) as {
       snapshotId: string;
     };
-    const indexPath = path.join(state, "history", "pi", "snapshots", head.snapshotId, "index.json");
+    const indexPath = path.join(state, "history", "pi", "snapshots", head.snapshotId, "manifest.json");
     const snapshot = JSON.parse(await readFile(indexPath, "utf8")) as {
       sessions: Array<{ sessionRef: string; rawFiles: string[] }>;
     };

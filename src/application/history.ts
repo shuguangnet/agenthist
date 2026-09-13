@@ -12,7 +12,15 @@ import {
 } from "../domain/history.js";
 import type { PortableContextBlock } from "../domain/portable-context.js";
 import { loadSnapshot } from "../infrastructure/history-store.js";
+import { ensureSearchIndex, loadHistoryHead } from "../infrastructure/history-store.js";
 import { loadLibraryOverlay, saveLibraryOverlay, type LibraryEntry } from "../infrastructure/library-store.js";
+import { updateSessionSearchIndex } from "../infrastructure/search-index.js";
+import {
+  listSessionSummaries,
+  searchMatchRefs,
+  searchMatchSnippet,
+  type IndexedSessionSummary,
+} from "../infrastructure/search-index.js";
 import { withStateReadLock, withStateWriteLock } from "../infrastructure/state.js";
 import { assertNoPendingTransactions } from "../infrastructure/transaction-store.js";
 
@@ -73,8 +81,11 @@ export interface SearchHistoryResult extends HistoryPage {
   readonly hits: readonly SearchHit[];
 }
 
-function includeView(session: StoredSession, view: HistoryView): boolean {
-  return view === "all" || libraryState(session.library) === view;
+function includeView(
+  session: { readonly library: { readonly archived: boolean; readonly deleted: boolean } },
+  view: HistoryView,
+): boolean {
+  return view === "all" || (session.library.deleted ? "deleted" : session.library.archived ? "archived" : "active") === view;
 }
 
 function resolveHistoryView(value: HistoryView | undefined): HistoryView {
@@ -145,18 +156,64 @@ async function historySnapshots(stateDirectory: string, selected?: readonly Agen
   return snapshots;
 }
 
+function indexedSessionSummary(agent: Agent, row: IndexedSessionSummary): HistorySessionSummary {
+  const library = {
+    name: row.libraryName,
+    tags: row.libraryTags,
+    archived: row.archived,
+    deleted: row.deleted,
+  };
+  return {
+    sessionRef: row.sessionRef,
+    agent,
+    title: library.name || row.title,
+    context: row.context,
+    model: row.model,
+    provider: row.provider,
+    updatedAt: row.updatedAt,
+    nativeArchived: row.nativeArchived,
+    libraryState: libraryState(library),
+    tags: [...library.tags],
+  };
+}
+
 export async function listHistory(options: ListHistoryOptions): Promise<ListHistoryResult> {
   return withStateReadLock(options.stateDirectory, async () => {
     const view = resolveHistoryView(options.view);
     const offset = options.offset ?? DEFAULT_HISTORY_OFFSET;
     const limit = options.limit ?? DEFAULT_HISTORY_LIMIT;
     validatePage(offset, limit);
+    const agents = options.agents ?? AGENTS;
+    // Fast path: compact summaries come from the derived index, so conversations
+    // are never loaded for list views.
+    let indexed: HistorySessionSummary[] | null = [];
+    for (const agent of agents) {
+      if (await loadHistoryHead(options.stateDirectory, agent) === null) continue;
+      const rows = await listSessionSummaries(options.stateDirectory, agent).catch(() => null);
+      if (rows === null) {
+        indexed = null;
+        break;
+      }
+      indexed.push(...rows
+        .filter((row) => includeView({ library: { archived: row.archived, deleted: row.deleted } }, view))
+        .map((row) => indexedSessionSummary(agent, row)));
+    }
+    if (indexed !== null) {
+      indexed.sort(compareSummaries);
+      const sessions = indexed.slice(offset, offset + limit);
+      return { ...pageMetadata(indexed.length, offset, limit, sessions.length), sessions };
+    }
     const snapshots = await historySnapshots(options.stateDirectory, options.agents);
     const matching = snapshots.flatMap((snapshot) => snapshot.sessions).filter((session) => includeView(session, view));
     sortSessions(matching);
     const sessions = matching.slice(offset, offset + limit).map(sessionSummary);
     return { ...pageMetadata(matching.length, offset, limit, sessions.length), sessions };
   });
+}
+
+function compareSummaries(left: HistorySessionSummary, right: HistorySessionSummary): number {
+  const byUpdated = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+  return Number.isNaN(byUpdated) || byUpdated === 0 ? left.sessionRef.localeCompare(right.sessionRef) : byUpdated;
 }
 
 async function showHistoryUnlocked(stateDirectory: string, sessionRef: string): Promise<StoredSession> {
@@ -310,6 +367,84 @@ export async function searchHistory(
     const offset = options.offset ?? DEFAULT_HISTORY_OFFSET;
     const limit = options.limit ?? DEFAULT_HISTORY_LIMIT;
     validatePage(offset, limit);
+    const agents = options.agents ?? AGENTS;
+    // Self-heal derived search indexes for manifest (v3) snapshots before pushdown.
+    for (const agent of agents) {
+      try {
+        await ensureSearchIndex(options.stateDirectory, agent);
+      } catch {
+        // Search falls back to the in-memory scan below when healing fails.
+      }
+    }
+    // Fully pushed-down path: compact summaries plus the FTS index serve the
+    // whole query without loading any conversation body. Snippets are resolved
+    // only for the returned page.
+    const indexed = new Map<Agent, readonly HistorySessionSummary[]>();
+    let complete = true;
+    for (const agent of agents) {
+      if (await loadHistoryHead(options.stateDirectory, agent) === null) continue;
+      const summaries = await listSessionSummaries(options.stateDirectory, agent).catch(() => null);
+      if (summaries === null) {
+        complete = false;
+        break;
+      }
+      let refs: ReadonlySet<string>;
+      try {
+        refs = await searchMatchRefs(options.stateDirectory, agent, query);
+      } catch {
+        complete = false;
+        break;
+      }
+      const matched = summaries
+        .filter((row) => refs.has(row.sessionRef))
+        .map((row) => indexedSessionSummary(agent, row))
+        .filter((summary) => includeView({ library: {
+          archived: summary.libraryState === "archived",
+          deleted: summary.libraryState === "deleted",
+        } }, view));
+      indexed.set(agent, matched);
+    }
+    if (complete) {
+      const foldedQuery = asciiFold(query);
+      const matched: Array<{ readonly summary: HistorySessionSummary; readonly metadataMatch?: SearchMatch }> = [];
+      for (const matchedSummaries of indexed.values()) {
+        for (const summary of matchedSummaries) {
+          const metadata: Array<[SearchHit["field"], string]> = [
+            ["name", summary.title],
+            ...summary.tags.map((tag): ["tag", string] => ["tag", tag]),
+            ["title", summary.title],
+            ["context", summary.context],
+            ["model", summary.model],
+            ["session_ref", summary.sessionRef],
+          ];
+          const metadataMatch = metadata
+            .map(([field, value]) => ({ field, snippet: matchingSnippet(value, query, foldedQuery) }))
+            .find((candidate) => candidate.snippet !== undefined);
+          matched.push({ summary,
+            ...(metadataMatch === undefined || metadataMatch.snippet === undefined
+              ? {}
+              : { metadataMatch: { field: metadataMatch.field, snippet: metadataMatch.snippet } }) });
+        }
+      }
+      matched.sort((left, right) => compareSummaries(left.summary, right.summary));
+      const total = matched.length;
+      const page = matched.slice(offset, offset + limit);
+      const hits: SearchHit[] = [];
+      for (const item of page) {
+        if (item.metadataMatch !== undefined && item.metadataMatch.snippet !== undefined) {
+          hits.push({
+            session: item.summary,
+            field: item.metadataMatch.field,
+            snippet: item.metadataMatch.snippet,
+          });
+          continue;
+        }
+        const snippet = await searchMatchSnippet(
+          options.stateDirectory, item.summary.agent, item.summary.sessionRef, query);
+        hits.push({ session: item.summary, field: "content", snippet });
+      }
+      return { query, ...pageMetadata(total, offset, limit, hits.length), hits };
+    }
     const snapshots = await historySnapshots(options.stateDirectory, options.agents);
     const foldedQuery = asciiFold(query);
     const hits: Array<{ readonly session: StoredSession; readonly match: SearchMatch }> = [];
@@ -327,6 +462,10 @@ export async function searchHistory(
     }));
     return { query, ...pageMetadata(hits.length, offset, limit, page.length), hits: page };
   });
+}
+
+function contentMatch(snippet: string | undefined): SearchMatch | undefined {
+  return snippet === undefined ? undefined : { field: "content", snippet };
 }
 
 export type HistoryMutationOperation = "rename" | "tag" | "archive" | "unarchive" | "delete" | "undelete";
@@ -450,6 +589,11 @@ export async function mutateHistory(options: MutateHistoryOptions): Promise<Muta
       const entries: LibraryEntry[] = overlay.entries.filter((entry) => entry.sessionRef !== options.sessionRef);
       entries.push({ sessionRef: options.sessionRef, ...after });
       await saveLibraryOverlay(options.stateDirectory, entries);
+      try {
+        await updateSessionSearchIndex(options.stateDirectory, agent, { ...session, library: after });
+      } catch {
+        // Search self-healing rebuilds a stale index on the next search.
+      }
     }
     return {
       sessionRef: options.sessionRef,

@@ -2,12 +2,14 @@ import { homedir } from "node:os";
 
 import {
   agentLabel,
+  collectGarbage,
   listCodexHistoryProviders,
   listNativeTransactions,
   recoverNativeTransaction,
   rollbackNativeTransaction,
   unifyCodexHistoryProviders,
   type CodexProviderHistoryOptions,
+  type GcResult,
 } from "../application/index.js";
 import {
   colorizeHuman,
@@ -275,4 +277,53 @@ export async function runCodex(
         : ""),
     globals.json,
   );
+}
+
+function gcHuman(result: GcResult, color: boolean): string {
+  const title = humanTitle(result.dryRun ? "Garbage collection plan" : "Garbage collection complete", color) +
+    "\n" + humanFields([
+      { label: "Mode", value: result.dryRun ? "dry-run" : "applied" },
+      { label: result.dryRun ? "Would free" : "Freed", value: `${result.freedBytes} bytes` },
+      { label: "Entries", value: String(result.entries.length) },
+    ], color);
+  if (result.entries.length === 0) return `${title}\n${colorizeHuman("No garbage found.", "muted", color)}\n`;
+  const rows = result.entries.map((entry) =>
+    `  ${colorizeHuman(entry.kind, "strong", color)} · ${entry.agent} · ${entry.path}\n` +
+    `    ${humanCount(entry.bytes, "byte")}\n`
+  ).join("");
+  return `${title}\n${humanSection("Entries", color)}\n${rows}`;
+}
+
+function gcSummary(result: GcResult): Record<string, unknown> {
+  return {
+    dry_run: result.dryRun,
+    freed_bytes: result.dryRun ? 0 : result.freedBytes,
+    reclaimable_bytes: result.freedBytes,
+    entries: result.entries.map((entry) => ({
+      kind: entry.kind,
+      agent: entry.agent,
+      path: entry.path,
+      bytes: entry.bytes,
+    })),
+    warnings: [...result.warnings],
+  };
+}
+
+export async function runGc(
+  globals: GlobalOptions,
+  args: readonly string[],
+  runtime: CliRuntime,
+): Promise<CliResult> {
+  let dryRun = false;
+  for (const argument of args) {
+    if (argument !== "--dry-run") throw invalidArguments(`unknown gc flag: ${argument}`);
+    dryRun = true;
+  }
+  const result = await withLiveStatus(
+    runtime,
+    globals,
+    dryRun ? "Planning garbage collection" : "Collecting garbage",
+    () => collectGarbage({ stateDirectory: globals.stateDirectory, ...(dryRun ? { dryRun } : {}) }),
+  );
+  return success("gc", gcSummary(result), gcHuman(result, globals.color), globals.json);
 }

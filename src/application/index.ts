@@ -56,6 +56,8 @@ export {
   inspectHistorySources,
   scanHistory,
 } from "./acquisition.js";
+export { collectGarbage } from "./gc.js";
+export type { GcEntry, GcEntryKind, GcResult } from "./gc.js";
 export type {
   ClaudeHistorySourceOptions,
   CodexHistorySourceOptions,

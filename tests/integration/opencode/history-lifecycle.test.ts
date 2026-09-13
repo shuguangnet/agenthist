@@ -439,7 +439,7 @@ test("OpenCode scan preserves readable multi-session history without copying con
     assert.deepEqual(new Set(listData.sessions.map((session) => session.provider)), new Set(["provider-alpha", "provider-beta"]));
 
     const capturedIndexPath = path.join(
-      state, "history", "opencode", "snapshots", head.snapshotId, "index.json",
+      state, "history", "opencode", "snapshots", head.snapshotId, "manifest.json",
     );
     const capturedIndexBytes = await readFile(capturedIndexPath, "utf8");
     const capturedIndex = JSON.parse(capturedIndexBytes) as {
@@ -840,7 +840,7 @@ test("OpenCode keeps pending-input and active-revert sessions readable but block
     const head = JSON.parse(await readFile(path.join(state, "history", "opencode", "head.json"), "utf8")) as {
       snapshotId: string;
     };
-    const indexPath = path.join(state, "history", "opencode", "snapshots", head.snapshotId, "index.json");
+    const indexPath = path.join(state, "history", "opencode", "snapshots", head.snapshotId, "manifest.json");
     const index = JSON.parse(await readFile(indexPath, "utf8")) as {
       sessions: Array<{
         nativeId: string;

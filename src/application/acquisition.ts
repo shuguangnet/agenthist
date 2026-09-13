@@ -8,6 +8,7 @@ import type {
 import { agentAdapter } from "../agents/registry.js";
 import { selectAgents, type Agent } from "../domain/agent.js";
 import { ensureStateDirectory } from "../infrastructure/history-store.js";
+import { enforceStateQuota } from "../infrastructure/gc.js";
 import { withStateWriteLock } from "../infrastructure/state.js";
 import { assertNoPendingTransactions } from "../infrastructure/transaction-store.js";
 
@@ -224,7 +225,20 @@ export async function scanHistory(options: ScanHistoryOptions): Promise<ScanHist
       inspections,
       agents,
       sessions: agents.reduce((sum, item) => sum + item.sessions, 0),
-      warnings: agents.flatMap((item) => item.warnings),
+      warnings: [...agents.flatMap((item) => item.warnings), ...await quotaWarnings(options.stateDirectory)],
     };
   });
+}
+
+async function quotaWarnings(stateDirectory: string): Promise<readonly string[]> {
+  try {
+    const outcome = await enforceStateQuota(stateDirectory);
+    if (outcome.collected === null) return [];
+    return [
+      `state directory exceeded its ${outcome.quotaBytes} byte budget; garbage collection removed ` +
+        `${outcome.collected.entries.length} entries (${outcome.collected.freedBytes} bytes)`,
+    ];
+  } catch (error) {
+    return [`state quota enforcement was skipped: ${(error as Error).message}`];
+  }
 }

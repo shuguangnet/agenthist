@@ -33,7 +33,8 @@
     "smoke": "node .build/src/cli/main.js --help",
     "smoke:package": "node tests/package-smoke.mjs",
     "prepack": "npm run build",
-    "verify": "npm run build && npm test && npm run smoke"
+    "verify": "npm run build && npm test && npm run smoke",
+    "benchmark:scale": "node --expose-gc .build/tests/benchmarks/history-scale.js"
   },
   "dependencies": {
     "cross-spawn": "7.0.6",

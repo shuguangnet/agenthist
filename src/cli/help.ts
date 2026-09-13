@@ -12,6 +12,7 @@ const commands = [
   ["import", "Restore or convert history from an .agenthist file"],
   ["codex", "Manage Codex-specific history, including provider rebinding"],
   ["transaction", "List, roll back, or recover native writes"],
+  ["gc", "Remove orphaned snapshot workspaces and snapshots"],
   ["help", "Show help for one command"],
   ["version", "Show the AgentHist version"],
 ] as const;
@@ -158,6 +159,15 @@ The target defaults to the built-in openai provider when --to is omitted.
 
 Inspect and safely finish or undo native history writes. Rollback and recover always require
 an explicit execution mode.
+`,
+  gc: `Usage:
+  agenthist gc [--dry-run]
+
+Remove garbage inside the AgentHist state directory: interrupted snapshot workspaces
+(.prepare-*) and published snapshots no longer referenced by the history head, pending
+transactions, or the transaction store. Native Agent history is never touched. The default
+applies the cleanup; --dry-run only reports reclaimable entries and bytes. Cleanup always
+skips entries retained by unfinished transactions.
 `,
   help: `Usage:
   agenthist help [command]
