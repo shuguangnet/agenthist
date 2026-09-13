@@ -681,6 +681,7 @@ export async function runImport(
     ...((wizardRequest?.piSessionRoot ?? piSessionRoot) === undefined
       ? {}
       : { piSessionRoot: wizardRequest?.piSessionRoot ?? piSessionRoot }),
+    ...(globals.qoderConfigRoot === undefined ? {} : { qoderConfigRoot: globals.qoderConfigRoot }),
     ...(globals.opencodeDatabase === undefined ? {} : { opencodeDatabase: globals.opencodeDatabase }),
     ...(globals.sqliteHome === undefined ? {} : { sqliteHome: globals.sqliteHome }),
     ...(globals.profile === undefined ? {} : { profile: globals.profile }),

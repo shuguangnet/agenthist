@@ -11,6 +11,7 @@ import {
   type ClaudeCheckpointFile,
 } from "../sidecars/checkpoint.js";
 import { claudeSessionRef, canonicalClaudeUuid } from "../identity.js";
+import { isClaudeFamilyAgent, claudeFamilyProfile } from "../family.js";
 import { claudeSessionSidecarIdentity } from "../sidecars/sidecar.js";
 import {
   claudeSubagentPathIdentity,
@@ -93,21 +94,39 @@ export function readClaudeDescriptor(
   const firstRootRecordUuid = identity?.firstRootRecordUuid;
   const blockers = strings(native?.migrationBlockers);
   if (
-    session.agent !== "claude" || typeof mainRelativePath !== "string" || typeof projectCarrier !== "string" ||
+    !isClaudeFamilyAgent(session.agent) || typeof mainRelativePath !== "string" ||
+    typeof projectCarrier !== "string" ||
     relatedFiles === undefined || typeof firstRootRecordUuid !== "string" || blockers === undefined ||
     native?.relationStatus !== "verified"
-  ) throw new Error(`Claude Code captured descriptor is invalid: ${session.sessionRef}`);
+  ) {
+    throw new Error(
+      `${claudeFamilyProfile(isClaudeFamilyAgent(session.agent) ? session.agent : "claude").displayName} ` +
+      `captured descriptor is invalid: ${session.sessionRef}`);
+  }
   canonicalClaudeUuid(firstRootRecordUuid);
   return { mainRelativePath, projectCarrier, firstRootRecordUuid, blockers, relatedFiles };
 }
 
-function validateMainPath(relativePath: string, projectCarrier: string, nativeId: string): void {
+function validateMainPath(
+  relativePath: string,
+  projectCarrier: string,
+  nativeId: string,
+  agent: "claude" | "qoder" = "claude",
+): void {
+  const profile = claudeFamilyProfile(agent);
+  const mainDirectory = profile.mainTranscriptDirectory;
   const parts = relativePath.split("/");
+  const expectedParts = mainDirectory === undefined ? 4 : 5;
+  const sessionPart = parts[mainDirectory === undefined ? 3 : 4];
   if (
-    parts.length !== 4 || parts[0] !== "claude" || parts[1] !== "projects" ||
-    parts[2] !== projectCarrier || projectCarrier === "" || parts[3] !== `${nativeId}.jsonl` ||
+    parts.length !== expectedParts || parts[0] !== "claude" || parts[1] !== "projects" ||
+    parts[2] !== projectCarrier || projectCarrier === "" ||
+    (mainDirectory !== undefined && parts[3] !== mainDirectory) ||
+    sessionPart !== `${nativeId}.jsonl` ||
     parts.includes("") || parts.includes(".") || parts.includes("..")
-  ) throw new Error("Claude Code main transcript path is invalid");
+  ) {
+    throw new Error(`${profile.displayName} main transcript path is invalid`);
+  }
 }
 
 function supportedRelatedFiles(native: ClaudeDescriptor, nativeId: string): ClaudeRelatedFileDescriptor[] {
@@ -185,16 +204,20 @@ function requireExportableClaudeSession(
   snapshot: AgentSnapshot,
   session: StoredSession,
 ): { readonly native: ClaudeDescriptor; readonly related: readonly ClaudeRelatedFileDescriptor[] } {
-  if (snapshot.agent !== "claude" || session.agent !== "claude") {
-    throw new Error("Claude archive received another Agent");
+  if (!isClaudeFamilyAgent(snapshot.agent) || snapshot.agent !== session.agent) {
+    throw new Error("Claude family archive received another Agent");
   }
   const native = readClaudeDescriptor(session);
-  validateMainPath(native.mainRelativePath, native.projectCarrier, session.nativeId);
+  validateMainPath(native.mainRelativePath, native.projectCarrier, session.nativeId, snapshot.agent);
   if (native.blockers.length !== 0) {
-    throw new Error(`Claude Code session cannot be exported without losing native history: ${session.sessionRef}`);
+    throw new Error(
+      `${claudeFamilyProfile(snapshot.agent).displayName} session cannot be exported without losing native history: ` +
+      session.sessionRef);
   }
   if (claudeSessionMode(session) === "coordinator") {
-    throw new Error(`Claude Code coordinator session cannot be exported without team runtime state: ${session.sessionRef}`);
+    throw new Error(
+      `${claudeFamilyProfile(snapshot.agent).displayName} coordinator session cannot be exported without team runtime state: ` +
+      session.sessionRef);
   }
   const related = supportedRelatedFiles(native, session.nativeId);
   const expectedRawFiles = [native.mainRelativePath, ...related.map((file) => file.relativePath)].sort();
@@ -237,16 +260,19 @@ export function validateClaudeArchiveEntries(
   objects: ReadonlyMap<string, ArchiveManifest["objects"][number]>,
 ): void {
   for (const entry of entries) {
+    if (!isClaudeFamilyAgent(entry.agent)) {
+      throw new Error(`archive entry is not a Claude family Agent: ${entry.sessionRef}`);
+    }
     const native = readClaudeDescriptor(entry);
     const related = supportedRelatedFiles(native, entry.nativeId);
     const expected = [
       { relativePath: native.mainRelativePath, role: "main-transcript" },
       ...related,
     ];
-    validateMainPath(native.mainRelativePath, native.projectCarrier, entry.nativeId);
+    validateMainPath(native.mainRelativePath, native.projectCarrier, entry.nativeId, entry.agent);
     if (
-      entry.agent !== "claude" || entry.nativeArchived || entry.provider !== "" ||
-      claudeSessionRef(entry.nativeId, native.firstRootRecordUuid) !== entry.sessionRef ||
+      entry.nativeArchived || entry.provider !== "" ||
+      claudeSessionRef(entry.nativeId, native.firstRootRecordUuid, entry.agent) !== entry.sessionRef ||
       native.blockers.length !== 0 || entry.objects.length !== expected.length ||
       new Set(entry.objects.map((binding) => binding.id)).size !== entry.objects.length ||
       expected.some((file, index) => {
@@ -254,7 +280,11 @@ export function validateClaudeArchiveEntries(
         return binding === undefined || binding.role !== file.role || binding.relativePath !== file.relativePath ||
           objects.get(binding.id)?.kind !== objectKind(file.role);
       })
-    ) throw new Error(`Claude Code archive entry is invalid: ${entry.sessionRef}`);
+    ) {
+      throw new Error(
+        `${claudeFamilyProfile(isClaudeFamilyAgent(entry.agent) ? entry.agent : "claude").displayName} ` +
+        `archive entry is invalid: ${entry.sessionRef}`);
+    }
   }
 }
 

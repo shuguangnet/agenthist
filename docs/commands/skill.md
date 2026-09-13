@@ -5,7 +5,7 @@ Install or remove the AgentHist Skill for supported Agents.
 ## Usage
 
 ```text
-agenthist skill install [--agent <codex|claude|opencode|pi>]... [--force]
+agenthist skill install [--agent <codex|claude|opencode|pi|qoder>]... [--force]
 agenthist skill uninstall
 ```
 

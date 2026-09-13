@@ -5,7 +5,7 @@ Check whether AgentHist can find history from supported Agents.
 ## Usage
 
 ```text
-agenthist doctor [--agent <codex|claude|opencode|pi>]...
+agenthist doctor [--agent <codex|claude|opencode|pi|qoder>]...
 ```
 
 Repeat `--agent` to select multiple Agents. When omitted, AgentHist checks every supported Agent.

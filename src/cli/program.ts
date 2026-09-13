@@ -49,6 +49,7 @@ function parseGlobals(args: readonly string[], runtime: CliRuntime): [GlobalOpti
   let opencodeDataRoot: string | undefined;
   let opencodeDatabase: string | undefined;
   let claudeConfigRoot: string | undefined;
+  let qoderConfigRoot: string | undefined;
   let piSessionRoot: string | undefined;
   while (index < args.length) {
     const argument = args[index]!;
@@ -58,7 +59,7 @@ function parseGlobals(args: readonly string[], runtime: CliRuntime): [GlobalOpti
       continue;
     }
     let destination: "state" | "codex" | "sqlite" | "profile" | "opencode-root" | "opencode-db" |
-      "claude-root" | "pi-root" | undefined;
+      "claude-root" | "qoder-root" | "pi-root" | undefined;
     if (argument === "--state-dir" || argument.startsWith("--state-dir=")) destination = "state";
     if (argument === "--codex-home" || argument.startsWith("--codex-home=")) destination = "codex";
     if (argument === "--codex-sqlite-home" || argument.startsWith("--codex-sqlite-home=")) destination = "sqlite";
@@ -66,6 +67,7 @@ function parseGlobals(args: readonly string[], runtime: CliRuntime): [GlobalOpti
     if (argument === "--opencode-data-root" || argument.startsWith("--opencode-data-root=")) destination = "opencode-root";
     if (argument === "--opencode-db" || argument.startsWith("--opencode-db=")) destination = "opencode-db";
     if (argument === "--claude-config-dir" || argument.startsWith("--claude-config-dir=")) destination = "claude-root";
+    if (argument === "--qoder-config-dir" || argument.startsWith("--qoder-config-dir=")) destination = "qoder-root";
     if (argument === "--pi-session-dir" || argument.startsWith("--pi-session-dir=")) destination = "pi-root";
     if (destination === undefined) break;
     const [value, next] = readValue(args, index, argument.split("=")[0]!);
@@ -77,6 +79,7 @@ function parseGlobals(args: readonly string[], runtime: CliRuntime): [GlobalOpti
     if (destination === "opencode-root") opencodeDataRoot = value;
     if (destination === "opencode-db") opencodeDatabase = value;
     if (destination === "claude-root") claudeConfigRoot = value;
+    if (destination === "qoder-root") qoderConfigRoot = value;
     if (destination === "pi-root") piSessionRoot = value;
   }
   const environment = runtime.environment ?? process.env;
@@ -99,6 +102,7 @@ function parseGlobals(args: readonly string[], runtime: CliRuntime): [GlobalOpti
       ...(opencodeDataRoot === undefined ? {} : { opencodeDataRoot }),
       ...(opencodeDatabase === undefined ? {} : { opencodeDatabase }),
       ...(claudeConfigRoot === undefined ? {} : { claudeConfigRoot }),
+      ...(qoderConfigRoot === undefined ? {} : { qoderConfigRoot }),
       ...(piSessionRoot === undefined ? {} : { piSessionRoot }),
     },
     args.slice(index),

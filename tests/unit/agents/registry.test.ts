@@ -18,6 +18,7 @@ test("Agent resume launchers use native session selectors without version gates"
     claude: { command: "claude", args: ["--resume", "native-session"] },
     opencode: { command: "opencode", args: ["--session", "native-session"] },
     pi: { command: "pi", args: ["--session", "native-session"] },
+    qoder: { command: "qoder", args: ["--resume", "native-session"] },
   } as const;
   for (const agent of AGENTS) {
     const launch = agentAdapter(agent).resume.launch({ nativeId: "native-session", cwd: "/work/project" });

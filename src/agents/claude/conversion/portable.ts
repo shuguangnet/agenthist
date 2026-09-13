@@ -8,6 +8,7 @@ import {
   type PreparedPortableSource,
 } from "../../../domain/conversion.js";
 import type { AgentSnapshot, ConversationItem, JsonValue, StoredSession } from "../../../domain/history.js";
+import { isClaudeFamilyAgent, claudeFamilyProfile } from "../family.js";
 import {
   hasClosedHistoricalToolSequence,
   PORTABLE_CONTEXT_SCHEMA,
@@ -217,8 +218,8 @@ function materializeClaudePortableSource(
   parsed: ParsedClaudeTranscript,
   options: ClaudePortableMaterializationOptions,
 ): MaterializedClaudePortableSource {
-  if (source.agent !== "claude" || parsed.nativeId !== source.nativeId) {
-    throw new Error("Claude portable materializer received a different transcript identity");
+  if (!isClaudeFamilyAgent(source.agent) || parsed.nativeId !== source.nativeId) {
+    throw new Error("claude family portable materializer received a different transcript identity");
   }
   const baseConversation = source.conversation.length !== 0 &&
       parsed.materializedCompactionCheckpoints === 0 &&
@@ -271,9 +272,13 @@ export async function prepareClaudePortableSource(
   source: StoredSession,
 ): Promise<PreparedPortableSource> {
   if (
-    snapshot.agent !== "claude" || source.agent !== "claude" ||
+    !isClaudeFamilyAgent(snapshot.agent) || snapshot.agent !== source.agent ||
     snapshot.sessions.find((session) => session.sessionRef === source.sessionRef)?.nativeId !== source.nativeId
-  ) throw new Error(`Claude portable source is outside the snapshot: ${source.sessionRef}`);
+  ) {
+    throw new Error(
+      `${claudeFamilyProfile(isClaudeFamilyAgent(source.agent) ? source.agent : "claude").displayName} ` +
+      `portable source is outside the snapshot: ${source.sessionRef}`);
+  }
   const descriptor = readClaudeDescriptor(source);
   const mainTranscriptPath = snapshotRawPath(
     stateDirectory,
@@ -348,7 +353,9 @@ function normalizeClaudePortableContext(
     readonly taskList?: ClaudeTaskList;
   } = {},
 ): PortableSourceNormalization {
-  if (source.agent !== "claude") throw new Error("Claude portable normalizer received another Agent");
+  if (!isClaudeFamilyAgent(source.agent)) {
+    throw new Error("claude family portable normalizer received another Agent");
+  }
   const materializedCompactionCheckpoints = options.materializedCompactionCheckpoints ?? 0;
   if (!Number.isSafeInteger(materializedCompactionCheckpoints) || materializedCompactionCheckpoints < 0) {
     throw new Error("Claude materialized compaction checkpoint count is invalid");
@@ -1724,7 +1731,7 @@ function normalizeClaudePortableContext(
     findings: normalized,
     session: {
       schemaVersion: PORTABLE_CONTEXT_SCHEMA,
-      sourceAgent: "claude",
+      sourceAgent: source.agent,
       sourceSessionRef: source.sessionRef,
       sourceNativeId: source.nativeId,
       workingDirectory: path.normalize(source.context),

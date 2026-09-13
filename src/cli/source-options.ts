@@ -28,6 +28,10 @@ export function historySourceOptions(
       ...(globals.claudeConfigRoot === undefined ? {} : { configRoot: globals.claudeConfigRoot }),
       environment, cwd, home,
     },
+    qoder: {
+      ...(globals.qoderConfigRoot === undefined ? {} : { configRoot: globals.qoderConfigRoot }),
+      environment, cwd, home,
+    },
     pi: {
       ...(globals.piSessionRoot === undefined ? {} : { sessionRoot: globals.piSessionRoot }),
       environment, cwd, home,

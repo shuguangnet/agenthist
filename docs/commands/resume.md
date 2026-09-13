@@ -6,7 +6,7 @@ Continue a captured conversation with its source Agent or another supported Agen
 
 ```text
 agenthist resume
-agenthist resume --last [--agent <codex|claude|opencode|pi>]
+agenthist resume --last [--agent <codex|claude|opencode|pi|qoder>]
 agenthist resume --session <session-ref> [--agent <agent>]
 ```
 

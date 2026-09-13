@@ -5,7 +5,7 @@ Copy local Agent history into the AgentHist history library.
 ## Usage
 
 ```text
-agenthist scan [--agent <codex|claude|opencode|pi>]...
+agenthist scan [--agent <codex|claude|opencode|pi|qoder>]...
 ```
 
 Repeat `--agent` to select multiple Agents. When omitted, AgentHist scans every detected Agent.

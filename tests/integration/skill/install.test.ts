@@ -13,6 +13,7 @@ test("skill install and uninstall manage only AgentHist-owned content", async ()
   const claudeSkill = path.join(root, ".claude", "skills", "agenthist");
   const openCodeSkill = path.join(root, ".config", "opencode", "skills", "agenthist");
   const piSkill = path.join(root, ".pi", "agent", "skills", "agenthist");
+  const qoderSkill = path.join(root, ".qoder", "skills", "agenthist");
   try {
     const installed = await runCli(["--json", "skill", "install"], runtime);
     assert.equal(installed.exitCode, 0, installed.stderr);
@@ -26,6 +27,7 @@ test("skill install and uninstall manage only AgentHist-owned content", async ()
     })), [
       { agents: ["codex"], status: "installed", shared: false },
       { agents: ["claude", "opencode"], status: "installed", shared: true },
+      { agents: ["qoder"], status: "installed", shared: false },
       { agents: ["pi"], status: "installed", shared: false },
     ]);
     const skillContents = await readFile(path.join(codexSkill, "SKILL.md"), "utf8");
@@ -36,6 +38,7 @@ test("skill install and uninstall manage only AgentHist-owned content", async ()
     assert.match(workflows, /explicit `--session` selection is\s+strict/);
     await access(path.join(claudeSkill, "references", "semantics.md"));
     await access(path.join(piSkill, "references", "semantics.md"));
+    await access(path.join(qoderSkill, "references", "semantics.md"));
     await assert.rejects(access(openCodeSkill), (error: NodeJS.ErrnoException) => error.code === "ENOENT");
 
     const unchanged = await runCli(["--json", "skill", "install"], runtime);
@@ -43,7 +46,7 @@ test("skill install and uninstall manage only AgentHist-owned content", async ()
     assert.deepEqual(
       (JSON.parse(unchanged.stdout) as { data: { targets: readonly { status: string }[] } }).data.targets
         .map((target) => target.status),
-      ["unchanged", "unchanged", "unchanged"],
+      ["unchanged", "unchanged", "unchanged", "unchanged"],
     );
 
     await writeFile(path.join(codexSkill, "SKILL.md"), "user-owned skill\n");
@@ -83,6 +86,7 @@ test("skill install and uninstall manage only AgentHist-owned content", async ()
         targets: [
           { agents: ["codex"], directory: codexSkill, shared: false, status: "removed" },
           { agents: ["claude", "opencode"], directory: claudeSkill, shared: true, status: "removed" },
+          { agents: ["qoder"], directory: qoderSkill, shared: false, status: "removed" },
           { agents: ["pi"], directory: piSkill, shared: false, status: "removed" },
           { agents: ["opencode"], directory: openCodeSkill, shared: false, status: "preserved" },
         ],
@@ -91,6 +95,7 @@ test("skill install and uninstall manage only AgentHist-owned content", async ()
     await assert.rejects(access(codexSkill), (error: NodeJS.ErrnoException) => error.code === "ENOENT");
     await assert.rejects(access(claudeSkill), (error: NodeJS.ErrnoException) => error.code === "ENOENT");
     await assert.rejects(access(piSkill), (error: NodeJS.ErrnoException) => error.code === "ENOENT");
+    await assert.rejects(access(qoderSkill), (error: NodeJS.ErrnoException) => error.code === "ENOENT");
     assert.equal(await readFile(path.join(openCodeSkill, "SKILL.md"), "utf8"), "user-owned skill\n");
 
     const repeated = await runCli(["--json", "skill", "uninstall"], runtime);
@@ -98,7 +103,7 @@ test("skill install and uninstall manage only AgentHist-owned content", async ()
     assert.deepEqual(
       (JSON.parse(repeated.stdout) as { data: { targets: readonly { status: string }[] } }).data.targets
         .map((target) => target.status),
-      ["absent", "absent", "absent", "preserved"],
+      ["absent", "absent", "absent", "absent", "preserved"],
     );
 
     const invalid = await runCli(["skill", "uninstall", "--force"], runtime);

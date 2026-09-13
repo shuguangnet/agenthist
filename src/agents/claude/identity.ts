@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import type { ClaudeFamilyAgent } from "./family.js";
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PAYLOAD_SCHEMA = "agenthist.claude.history-identity-payload/v1";
 const PROFILE = "agenthist.claude.conversation-key/v1";
@@ -20,13 +22,17 @@ export function canonicalClaudeUuid(value: string): string {
   return value.toLowerCase();
 }
 
-export function claudeSessionRef(nativeId: string, firstRootRecordUuid: string): string {
+export function claudeSessionRef(
+  nativeId: string,
+  firstRootRecordUuid: string,
+  agent: ClaudeFamilyAgent = "claude",
+): string {
   const session = canonicalClaudeUuid(nativeId);
   const root = canonicalClaudeUuid(firstRootRecordUuid);
   const payload = frameStrings([PAYLOAD_SCHEMA, session, root]);
   const digest = createHash("sha256")
-    .update(frameStrings([DOMAIN, "claude", PROFILE]))
+    .update(frameStrings([DOMAIN, agent, PROFILE]))
     .update(frame(payload))
     .digest("hex");
-  return `ahsr1_claude_ck1_${digest}`;
+  return `ahsr1_${agent}_ck1_${digest}`;
 }

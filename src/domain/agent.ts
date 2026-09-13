@@ -3,6 +3,7 @@ export const AGENT_CATALOG = [
   { id: "claude", label: "Claude Code" },
   { id: "opencode", label: "OpenCode" },
   { id: "pi", label: "Pi" },
+  { id: "qoder", label: "Qoder" },
 ] as const;
 
 export type Agent = (typeof AGENT_CATALOG)[number]["id"];

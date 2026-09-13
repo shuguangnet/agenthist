@@ -12,6 +12,7 @@ import {
   type ExclusiveFileImage,
 } from "../../../infrastructure/exclusive-file.js";
 import { copyStableFile, digestFile } from "../../../infrastructure/files.js";
+import { isClaudeFamilyAgent, claudeFamilyProfile, type ClaudeFamilyAgent } from "../family.js";
 import { loadSnapshot } from "../../../infrastructure/history-store.js";
 import {
   newManagedResourceEffects,
@@ -60,6 +61,7 @@ export interface RestoreClaudeResult {
 }
 
 export interface RestoreClaudeOptions extends ClaudeSourceOptions {
+  readonly familyAgent?: ClaudeFamilyAgent;
   readonly stateDirectory: string;
   readonly entries: readonly ImportEntry[];
   readonly objects: ReadonlyMap<string, string>;
@@ -106,8 +108,8 @@ function archiveFiles(
   objects: ReadonlyMap<string, string>,
   descriptor: ReturnType<typeof readClaudeDescriptor>,
 ): ArchiveClaudeFile[] {
-  if (entry.agent !== "claude" || entry.objects.length === 0 || entry.objects[0]?.role !== "main-transcript") {
-    throw new Error(`Claude Code import entry is invalid: ${entry.sessionRef}`);
+  if (!isClaudeFamilyAgent(entry.agent) || entry.objects.length === 0 || entry.objects[0]?.role !== "main-transcript") {
+    throw new Error("claude family import entry is invalid");
   }
   return entry.objects.map((binding) => {
     const role = binding.role;
@@ -214,8 +216,11 @@ async function buildRestorePlan(options: RestoreClaudeOptions): Promise<RestoreP
       if (source.role === "session-sidecar" && sidecar === undefined) {
         throw new Error(`Claude Code session sidecar path is invalid: ${entry.sessionRef}`);
       }
+      const mainDirectory = claudeFamilyProfile(isClaudeFamilyAgent(entry.agent) ? entry.agent : "claude").mainTranscriptDirectory;
       const destination = source.role === "main-transcript"
-        ? path.join(target.configRoot, "projects", projectCarrier, `${entry.nativeId}.jsonl`)
+        ? mainDirectory === undefined
+          ? path.join(target.configRoot, "projects", projectCarrier, `${entry.nativeId}.jsonl`)
+          : path.join(target.configRoot, "projects", projectCarrier, mainDirectory, `${entry.nativeId}.jsonl`)
         : source.role === "checkpoint-backup"
           ? path.join(target.configRoot, "file-history", entry.nativeId, basename)
           : source.role === "task-entry" || source.role === "task-highwatermark"
@@ -454,7 +459,7 @@ function importedLibrary(entries: readonly ImportEntry[]): Map<string, StoredSes
 }
 
 async function reconcileWithoutNativeWrite(options: RestoreClaudeOptions, plan: RestorePlan): Promise<void> {
-  const snapshot = await loadSnapshot(options.stateDirectory, "claude");
+  const snapshot = await loadSnapshot(options.stateDirectory, options.familyAgent ?? "claude");
   if (snapshot !== undefined && options.entries.every((entry) =>
     snapshot.sessions.some((session) => session.sessionRef === entry.sessionRef)
   )) return;

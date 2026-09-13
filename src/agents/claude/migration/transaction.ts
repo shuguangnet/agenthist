@@ -18,6 +18,7 @@ import {
   type ExclusiveFileImage,
 } from "../../../infrastructure/exclusive-file.js";
 import { digestFile } from "../../../infrastructure/files.js";
+import { isClaudeFamilyAgent, type ClaudeFamilyAgent } from "../family.js";
 import { loadHistoryHead, loadSnapshot, restoreHistoryHead } from "../../../infrastructure/history-store.js";
 import {
   observeManagedResourceEffects,
@@ -93,6 +94,7 @@ interface ImportedLibrary {
 
 interface ClaudeTransactionPayload {
   readonly schemaVersion: typeof PAYLOAD_SCHEMA;
+  readonly agent: ClaudeFamilyAgent;
   readonly target: { readonly configRoot: string };
   readonly effects: readonly ClaudeTransactionEffect[];
   readonly resources: readonly ManagedResourceTransactionEffect[];
@@ -112,6 +114,7 @@ export interface PreparedClaudeEffect {
 }
 
 export interface PrepareClaudeTransactionOptions {
+  readonly familyAgent?: ClaudeFamilyAgent;
   readonly stateDirectory: string;
   readonly configRoot: string;
   readonly effects: readonly PreparedClaudeEffect[];
@@ -258,8 +261,10 @@ function validateSessionFiles(
 }
 
 export function readClaudeTransaction(journal: TransactionJournal): ClaudeTransactionPayload {
-  if (journal.agents.length !== 1 || journal.agents[0] !== "claude" || journal.operation !== "history_import") {
-    throw new Error("transaction is not a supported Claude Code operation");
+  if (journal.agents.length !== 1 || !isClaudeFamilyAgent(journal.agents[0]!) ||
+    journal.operation !== "history_import"
+  ) {
+    throw new Error("transaction is not a supported Claude family operation");
   }
   const payload = objectValue(journal.payload);
   const target = objectValue(payload?.target);
@@ -361,6 +366,7 @@ export function readClaudeTransaction(journal: TransactionJournal): ClaudeTransa
   }
   return {
     schemaVersion: PAYLOAD_SCHEMA,
+    agent: journal.agents[0]!,
     target: { configRoot: target.configRoot },
     effects,
     resources,
@@ -386,7 +392,7 @@ export async function prepareClaudeTransaction(options: PrepareClaudeTransaction
   }
   const preparedResources = await prepareManagedResourceTransactionEffects(options.resources);
   sources.push(...preparedResources.sources);
-  const previous = await loadSnapshot(options.stateDirectory, "claude");
+  const previous = await loadSnapshot(options.stateDirectory, options.familyAgent ?? "claude");
   const sessions = [...options.sessions].sort((left, right) => left.sessionRef.localeCompare(right.sessionRef));
   const importedLibrary: ImportedLibrary[] = [];
   for (const session of sessions) {
@@ -399,19 +405,20 @@ export async function prepareClaudeTransaction(options: PrepareClaudeTransaction
   const now = new Date().toISOString();
   const payload: ClaudeTransactionPayload = {
     schemaVersion: PAYLOAD_SCHEMA,
+    agent: options.familyAgent ?? "claude",
     target: { configRoot: path.resolve(options.configRoot) },
     effects,
     resources: preparedResources.effects,
     sessions,
     importedLibrary,
-    historyHeadBefore: await loadHistoryHead(options.stateDirectory, "claude"),
+    historyHeadBefore: await loadHistoryHead(options.stateDirectory, options.familyAgent ?? "claude"),
     historyHeadAfter: null,
   };
   const journal: TransactionJournal = {
     schemaVersion: "agenthist.transaction/v1",
     id,
     operation: "history_import",
-    agents: ["claude"],
+    agents: [options.familyAgent ?? "claude"],
     state: "planned",
     phase: "prepared",
     direction: "forward",
@@ -597,7 +604,7 @@ function withPayload(journal: TransactionJournal, payload: ClaudeTransactionPayl
 }
 
 async function reconciledHeadMatches(stateDirectory: string, payload: ClaudeTransactionPayload): Promise<boolean> {
-  const snapshot = await loadSnapshot(stateDirectory, "claude");
+  const snapshot = await loadSnapshot(stateDirectory, payload.agent);
   if (snapshot === undefined || !payload.sessions.every((item) =>
     snapshot.sessions.some((session) => session.sessionRef === item.sessionRef && session.nativeId === item.nativeId)
   )) return false;
@@ -612,7 +619,7 @@ async function reconcileForward(
   journal: TransactionJournal,
   payload: ClaudeTransactionPayload,
 ): Promise<{ readonly journal: TransactionJournal; readonly payload: ClaudeTransactionPayload }> {
-  const currentHead = await loadHistoryHead(stateDirectory, "claude");
+  const currentHead = await loadHistoryHead(stateDirectory, payload.agent);
   if (payload.historyHeadAfter !== null) {
     if (currentHead !== payload.historyHeadAfter) throw new Error("Claude Code history head changed after reconciliation");
     return { journal, payload };
@@ -677,7 +684,7 @@ export async function previewClaudeRollback(
   return {
     transactionRef: transactionReference(journal.id), operation: "history_import", state: journal.state,
     direction: "rollback", ready: nativeAt(observed, "after") &&
-      await loadHistoryHead(stateDirectory, "claude") === payload.historyHeadAfter,
+      await loadHistoryHead(stateDirectory, payload.agent) === payload.historyHeadAfter,
     items: payload.sessions.length, findings: observed.findings,
   };
 }
@@ -695,7 +702,7 @@ export async function rollbackClaudeTransaction(
   const payload = readClaudeTransaction(journal);
   try {
     await removeEffects(payload, false);
-    await restoreHistoryHead(stateDirectory, "claude", payload.historyHeadBefore);
+    await restoreHistoryHead(stateDirectory, payload.agent, payload.historyHeadBefore);
     journal = await saveTransaction(stateDirectory, {
       ...withoutFailure(journal), state: "rolled_back", phase: "rolled_back", direction: "rollback",
     });
@@ -716,7 +723,7 @@ export async function previewClaudeRecovery(
     throw new Error("transaction does not require recovery");
   }
   const observed = await observations(stateDirectory, journal, payload, journal.direction !== "rollback");
-  const head = await loadHistoryHead(stateDirectory, "claude");
+  const head = await loadHistoryHead(stateDirectory, payload.agent);
   const headReady = journal.direction === "rollback"
     ? head === payload.historyHeadAfter || head === payload.historyHeadBefore
     : payload.historyHeadAfter === null
@@ -744,7 +751,7 @@ export async function recoverClaudeTransaction(
   try {
     if (journal.direction === "rollback") {
       await removeEffects(payload, true);
-      await restoreHistoryHead(stateDirectory, "claude", payload.historyHeadBefore);
+      await restoreHistoryHead(stateDirectory, payload.agent, payload.historyHeadBefore);
       return saveTransaction(stateDirectory, { ...withoutFailure(journal), state: "rolled_back", phase: "rolled_back" });
     }
     await publishEffects(stateDirectory, journal, payload, true);

@@ -117,6 +117,7 @@ function transferOptions(
     ...(globals.opencodeDataRoot === undefined ? {} : { opencodeDataRoot: globals.opencodeDataRoot }),
     ...(globals.opencodeDatabase === undefined ? {} : { opencodeDatabase: globals.opencodeDatabase }),
     ...(globals.claudeConfigRoot === undefined ? {} : { claudeConfigRoot: globals.claudeConfigRoot }),
+    ...(globals.qoderConfigRoot === undefined ? {} : { qoderConfigRoot: globals.qoderConfigRoot }),
     ...(globals.piSessionRoot === undefined ? {} : { piSessionRoot: globals.piSessionRoot }),
   };
 }

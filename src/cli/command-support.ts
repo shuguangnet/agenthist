@@ -44,6 +44,7 @@ export interface GlobalOptions {
   readonly opencodeDataRoot?: string;
   readonly opencodeDatabase?: string;
   readonly claudeConfigRoot?: string;
+  readonly qoderConfigRoot?: string;
   readonly piSessionRoot?: string;
 }
 

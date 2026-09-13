@@ -32,6 +32,7 @@ It can also find recurring requirements, preferences, and working methods across
 | [Claude Code](https://github.com/anthropics/claude-code) | ✓ | ✓ | ✓ |
 | [OpenCode](https://github.com/anomalyco/opencode) | ✓ | ✓ | ✓ |
 | [Pi](https://github.com/earendil-works/pi) | ✓ | ✓ | ✓ |
+| [Qoder](https://qoder.com) | ✓ | ✓ | ✓ |
 
 ## 📦 Installation
 

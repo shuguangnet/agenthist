@@ -17,6 +17,7 @@ import {
   scanState,
 } from "../incremental-scan.js";
 import { discoverClaudeCarriers, sameClaudeInventory, type ClaudeCarrier } from "./carrier.js";
+import { claudeFamilyProfile, type ClaudeFamilyAgent } from "./family.js";
 import { validateClaudeCheckpoints, type ClaudeCheckpointFile } from "./sidecars/checkpoint.js";
 import { claudeSessionRef } from "./identity.js";
 import { requireClaudeSource, resolveClaudeSource, type ClaudeSourceOptions } from "./source.js";
@@ -28,6 +29,7 @@ import { parseClaudeTranscript } from "./history/transcript.js";
 export interface ScanClaudeOptions extends ClaudeSourceOptions {
   readonly stateDirectory: string;
   readonly importedLibrary?: ReadonlyMap<string, StoredSession["library"]>;
+  readonly familyAgent?: ClaudeFamilyAgent;
 }
 
 export interface ScanClaudeResult {
@@ -74,14 +76,16 @@ function claudeSessionFingerprint(main: ClaudeCarrier, related: readonly ClaudeC
 }
 
 export async function scanClaude(options: ScanClaudeOptions): Promise<ScanClaudeResult> {
-  const source = resolveClaudeSource(options);
-  await requireClaudeSource(source);
+  const agent = options.familyAgent ?? "claude";
+  const profile = claudeFamilyProfile(agent);
+  const source = resolveClaudeSource(options, agent);
+  await requireClaudeSource(source, agent);
   await ensureStateDirectory(options.stateDirectory, [source.configRoot]);
-  const before = await discoverClaudeCarriers(source.configRoot);
+  const before = await discoverClaudeCarriers(source.configRoot, agent);
   const mains = before.filter((carrier) => carrier.role === "main");
-  if (mains.length === 0) throw new Error("Claude Code has no supported persisted sessions");
-  const previous = await loadSnapshot(options.stateDirectory, "claude");
-  const sourceKey = incrementalSourceKey("claude", [source.configRoot]);
+  if (mains.length === 0) throw new Error(`${profile.displayName} has no supported persisted sessions`);
+  const previous = await loadSnapshot(options.stateDirectory, agent);
+  const sourceKey = incrementalSourceKey(agent, [source.configRoot]);
   const previousByNativeId = reusableNativeSessionMap(previous, sourceKey);
   const previousLibrary = new Map(previous?.sessions.map((session) => [session.sessionRef, session.library]));
   const reusable = new Map<string, ReusableClaudeSession>();
@@ -98,7 +102,7 @@ export async function scanClaude(options: ScanClaudeOptions): Promise<ScanClaude
     reusable.set(main.relativePath, { session: cached, rawFiles, fingerprint });
     rawFiles.forEach((file) => reusableFiles.add(file));
   }
-  const workspace = await createSnapshotWorkspace(options.stateDirectory, "claude");
+  const workspace = await createSnapshotWorkspace(options.stateDirectory, agent);
   try {
     for (const carrier of before) {
       const relativePath = rawRelative(carrier);
@@ -108,8 +112,8 @@ export async function scanClaude(options: ScanClaudeOptions): Promise<ScanClaude
         await copyStableFile(carrier.sourcePath, path.join(workspace.rawRoot, ...relativePath.split("/")));
       }
     }
-    const after = await discoverClaudeCarriers(source.configRoot);
-    if (!sameClaudeInventory(before, after)) throw new Error("Claude Code history changed while scanning");
+    const after = await discoverClaudeCarriers(source.configRoot, agent);
+    if (!sameClaudeInventory(before, after)) throw new Error(`${profile.displayName} history changed while scanning`);
 
     const sessions: StoredSession[] = [];
     const assigned = new Set<string>();
@@ -121,7 +125,7 @@ export async function scanClaude(options: ScanClaudeOptions): Promise<ScanClaude
       if (cached !== undefined) {
         cached.rawFiles.forEach((relative) => assigned.add(relative));
         if (seenReferences.has(cached.session.sessionRef)) {
-          throw new Error(`Claude Code logical session appears in multiple carriers: ${cached.session.nativeId}`);
+          throw new Error(`${profile.displayName} logical session appears in multiple carriers: ${cached.session.nativeId}`);
         }
         seenReferences.add(cached.session.sessionRef);
         warnings.push(...(previous?.warnings.filter((warning) => warning.includes(cached.session.nativeId)) ?? []));
@@ -229,9 +233,9 @@ export async function scanClaude(options: ScanClaudeOptions): Promise<ScanClaude
       }
       const rawFiles = [main, ...related].map(rawRelative).sort();
       rawFiles.forEach((relative) => assigned.add(relative));
-      const sessionRef = claudeSessionRef(parsed.nativeId, parsed.firstRootRecordUuid);
+      const sessionRef = claudeSessionRef(parsed.nativeId, parsed.firstRootRecordUuid, agent);
       if (seenReferences.has(sessionRef)) {
-        throw new Error(`Claude Code logical session appears in multiple carriers: ${parsed.nativeId}`);
+        throw new Error(`${profile.displayName} logical session appears in multiple carriers: ${parsed.nativeId}`);
       }
       seenReferences.add(sessionRef);
       if (sessionBlockers.length !== 0) {
@@ -242,7 +246,7 @@ export async function scanClaude(options: ScanClaudeOptions): Promise<ScanClaude
       }
       sessions.push({
         sessionRef,
-        agent: "claude",
+        agent,
         nativeId: parsed.nativeId,
         title: parsed.title,
         context: parsed.context,
@@ -278,12 +282,12 @@ export async function scanClaude(options: ScanClaudeOptions): Promise<ScanClaude
     sessions.sort((left, right) => left.sessionRef.localeCompare(right.sessionRef));
     const auxiliaryFiles = before.map(rawRelative).filter((relative) => !assigned.has(relative)).sort();
     if (auxiliaryFiles.length !== 0) {
-      warnings.push(`captured ${auxiliaryFiles.length} unassigned Claude Code history carrier(s)`);
+      warnings.push(`captured ${auxiliaryFiles.length} unassigned ${profile.displayName} history carrier(s)`);
     }
     const snapshot: AgentSnapshot = {
       schemaVersion: "agenthist.history-snapshot/v2",
       snapshotId: workspace.id,
-      agent: "claude",
+      agent,
       scannedAt: new Date().toISOString(),
       sessions,
       auxiliaryFiles,
