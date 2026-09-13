@@ -11,12 +11,29 @@ import {
   type GlobalOptions,
 } from "./command-support.js";
 import { commandHelp, rootHelp } from "./help.js";
-import { runExperience } from "./experience-command.js";
-import { runDoctor, runHistory, runScan } from "./history-command.js";
-import { runCodex, runTransaction } from "./maintenance-command.js";
-import { runResume } from "./resume-command.js";
-import { runSkill } from "./skill-command.js";
-import { runExport, runImport, runInspect } from "./transfer-command.js";
+
+type CommandRunner = (
+  globals: GlobalOptions,
+  args: readonly string[],
+  runtime: CliRuntime,
+) => Promise<CliResult>;
+
+// Command modules load lazily so that --help, --version, and argument errors
+// do not pay the import cost of every command implementation.
+const commandLoaders: Readonly<Record<string, () => Promise<{ runner: CommandRunner }>>> = {
+  doctor: async () => ({ runner: (await import("./history-command.js")).runDoctor }),
+  scan: async () => ({ runner: (await import("./history-command.js")).runScan }),
+  history: async () => ({ runner: (await import("./history-command.js")).runHistory }),
+  resume: async () => ({ runner: (await import("./resume-command.js")).runResume }),
+  experience: async () => ({ runner: (await import("./experience-command.js")).runExperience }),
+  skill: async () => ({ runner: (await import("./skill-command.js")).runSkill }),
+  export: async () => ({ runner: (await import("./transfer-command.js")).runExport }),
+  inspect: async () => ({ runner: (await import("./transfer-command.js")).runInspect }),
+  import: async () => ({ runner: (await import("./transfer-command.js")).runImport }),
+  transaction: async () => ({ runner: (await import("./maintenance-command.js")).runTransaction }),
+  codex: async () => ({ runner: (await import("./maintenance-command.js")).runCodex }),
+  gc: async () => ({ runner: (await import("./maintenance-command.js")).runGc }),
+};
 
 export type { CliResult, CliRuntime } from "./command-support.js";
 
@@ -120,18 +137,10 @@ export async function runCli(args: readonly string[], runtime: CliRuntime = {}):
       if (help === undefined) throw invalidArguments(`unknown help command: ${command ?? ""}`);
       return { exitCode: 0, stdout: help, stderr: "" };
     }
-    if (command === "doctor") return await runDoctor(globals, commandArgs.slice(1), runtime);
-    if (command === "scan") return await runScan(globals, commandArgs.slice(1), runtime);
-    if (command === "history") return await runHistory(globals, commandArgs.slice(1), runtime);
-    if (command === "resume") return await runResume(globals, commandArgs.slice(1), runtime);
-    if (command === "experience") return await runExperience(globals, commandArgs.slice(1), runtime);
-    if (command === "skill") return await runSkill(globals, commandArgs.slice(1), runtime);
-    if (command === "export") return await runExport(globals, commandArgs.slice(1), runtime);
-    if (command === "inspect") return await runInspect(globals, commandArgs.slice(1), runtime);
-    if (command === "import") return await runImport(globals, commandArgs.slice(1), runtime);
-    if (command === "transaction") return await runTransaction(globals, commandArgs.slice(1), runtime);
-    if (command === "codex") return await runCodex(globals, commandArgs.slice(1), runtime);
-    throw invalidArguments(`unknown command: ${command ?? ""}`);
+    const loader = command === undefined ? undefined : commandLoaders[command];
+    if (loader === undefined) throw invalidArguments(`unknown command: ${command ?? ""}`);
+    const { runner } = await loader();
+    return await runner(globals, commandArgs.slice(1), runtime);
   } catch (error) {
     return failure(attemptedCommand, error, json, runtime.color === true);
   }
